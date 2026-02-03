@@ -1,3 +1,6 @@
+<p align="center">
+  <img src="assets/altenglish-logo.svg" width="160" alt="AltEnglish Logo">
+</p>
 # AltEnglish
 
 AltEnglish is an experimental, engineered writing system for English that encodes **speech sounds (phonemes)** into a **feature-based script**, instead of relying on historically irregular spelling.
