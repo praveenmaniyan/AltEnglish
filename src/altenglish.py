@@ -1,6 +1,7 @@
 import re
 import shutil
 import subprocess
+import argparse
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -142,6 +143,14 @@ def arpabet_to_engineered_symbols(phones: List[str]) -> Tuple[str, List[str]]:
     return " ".join(out), missing
 
 
+def tokenize_words(text: str) -> List[str]:
+    return re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text)
+
+
+def tokenize_with_punctuation(text: str) -> List[str]:
+    return re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?|\\s+|[^A-Za-z\\s]", text)
+
+
 # ---------------------------------------
 # 3) Audio generation (espeak-ng)
 # ---------------------------------------
@@ -206,7 +215,19 @@ def arpabet_to_espeak_phonemes(phones: List[str]) -> Tuple[str, List[str]]:
     # Spaces can help eSpeak parse, so keep them
     return "[[" + " ".join(parts) + "]]", missing
 
-def make_audio_files(word: str, phones: List[str]) -> None:
+
+def arpabet_to_espeak_parts(phones: List[str]) -> Tuple[List[str], List[str]]:
+    parts = []
+    missing = []
+    for ph in phones:
+        base = strip_stress(ph)
+        if base in ESPEAK_PH:
+            parts.append(ESPEAK_PH[base])
+        else:
+            missing.append(base)
+    return parts, missing
+
+def make_audio_files(text: str, phones_groups: List[List[str]], pause_between_words: bool = False) -> None:
     """
     Create:
       - output/traditional.wav
@@ -224,12 +245,25 @@ def make_audio_files(word: str, phones: List[str]) -> None:
 
     # 1) Traditional pronunciation
     subprocess.run(
-        [cmd, "-v", "en", "-w", str(traditional_path), word],
+        [cmd, "-v", "en", "-w", str(traditional_path), text],
         check=False
     )
 
     # 2) New pronunciation via phoneme string
-    phon_str, missing = arpabet_to_espeak_phonemes(phones)
+    parts = []
+    missing = []
+    for group in phones_groups:
+        if pause_between_words and parts:
+            parts.append(",")
+        group_parts, group_missing = arpabet_to_espeak_parts(group)
+        if group_parts:
+            parts.extend(group_parts)
+        missing.extend(group_missing)
+    if not parts:
+        print("\n[Audio] Warning: no phonemes available for new.wav.")
+        return
+
+    phon_str = "[[" + " ".join(parts) + "]]"
     if missing:
         print("\n[Audio] Warning: some phones missing for eSpeak phoneme mode:", missing)
         print("        The 'new.wav' may be approximate.")
@@ -245,30 +279,131 @@ def make_audio_files(word: str, phones: List[str]) -> None:
 # 4) Main
 # ---------------------------------------
 def main():
-    word = input("Enter an English word: ").strip()
-    if not word:
+    parser = argparse.ArgumentParser(description="AltEnglish transliteration tool")
+    parser.add_argument(
+        "-m",
+        "--mode",
+        choices=["word", "sentence"],
+        default="word",
+        help="Process a single word or a full sentence",
+    )
+    parser.add_argument(
+        "--preserve-punctuation",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Preserve punctuation in sentence output",
+    )
+    parser.add_argument(
+        "--no-audio",
+        action="store_true",
+        help="Skip WAV generation",
+    )
+    parser.add_argument("text", nargs="*", help="Input word or sentence")
+    args = parser.parse_args()
+
+    if args.text:
+        raw_text = " ".join(args.text).strip()
+    else:
+        prompt = "Enter an English word: " if args.mode == "word" else "Enter an English sentence: "
+        raw_text = input(prompt).strip()
+
+    if not raw_text:
         print("No input.")
         return
 
-    phones = word_to_arpabet(word)
-    if phones is None:
-        print(f"Could not find '{word}' in CMUdict.")
-        print("Tip: try a different spelling, or add a G2P fallback (see note at end).")
+    words = tokenize_words(raw_text)
+    if not words:
+        print("No valid words found in input.")
         return
 
-    engineered, missing = arpabet_to_engineered_symbols(phones)
+    if args.mode == "word":
+        word = words[0]
+        if len(words) > 1:
+            print("Warning: multiple words detected. Using the first word only.")
 
-    print("\nCMUdict phones:", " ".join(phones))
-    print("Engineered symbols:", engineered)
-    if missing:
-        print("Unmapped phones (need adding):", missing)
+        phones = word_to_arpabet(word)
+        if phones is None:
+            print(f"Could not find '{word}' in CMUdict.")
+            print("Tip: try a different spelling, or add a G2P fallback (see note at end).")
+            return
 
-    make_audio_files(word, phones)
+        engineered, missing = arpabet_to_engineered_symbols(phones)
+
+        print("\nCMUdict phones:", " ".join(phones))
+        print("Engineered symbols:", engineered)
+        if missing:
+            print("Unmapped phones (need adding):", missing)
+
+        if not args.no_audio:
+            make_audio_files(word, [phones])
+
+    else:
+        word_entries = []
+        missing_words = []
+        any_unmapped = []
+
+        for word in words:
+            phones = word_to_arpabet(word)
+            if phones is None:
+                word_entries.append((word, None, None, []))
+                missing_words.append(word)
+                continue
+
+            engineered, missing = arpabet_to_engineered_symbols(phones)
+            word_entries.append((word, phones, engineered, missing))
+            if missing:
+                any_unmapped.extend(missing)
+
+        print("\nCMUdict phones (by word):")
+        for word, phones, _, _ in word_entries:
+            if phones is None:
+                print(f"  {word}: <not found>")
+            else:
+                print(f"  {word}: {' '.join(phones)}")
+
+        print("\nEngineered symbols (by word):")
+        for word, phones, engineered, _ in word_entries:
+            if phones is None:
+                print(f"  {word}: <?>({word})")
+            else:
+                print(f"  {word}: {engineered}")
+
+        tokens = tokenize_with_punctuation(raw_text)
+        sentence_symbols = []
+        word_symbols_map = {word: engineered for word, phones, engineered, _ in word_entries if phones}
+        word_pattern = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
+        for token in tokens:
+            if word_pattern.fullmatch(token):
+                sentence_symbols.append(word_symbols_map.get(token, f"<?>({token})"))
+            elif token.isspace():
+                sentence_symbols.append(token)
+            else:
+                if args.preserve_punctuation:
+                    sentence_symbols.append(token)
+                else:
+                    sentence_symbols.append(" ")
+
+        print("\nEngineered symbols (sentence):")
+        print("".join(sentence_symbols).strip())
+
+        if missing_words:
+            print("\nWords not found in CMUdict:", missing_words)
+            print("Tip: try different spelling, or add a G2P fallback (see note at end).")
+
+        if any_unmapped:
+            print("Unmapped phones (need adding):", any_unmapped)
+
+        phones_groups = [phones for _, phones, _, _ in word_entries if phones]
+        if not args.no_audio:
+            make_audio_files(raw_text, phones_groups, pause_between_words=True)
 
     print("\nDone.")
-    print("\nIf audio succeeded, files were written to:")
-    print(f"  - {OUTPUT_DIR / 'traditional.wav'}")
-    print(f"  - {OUTPUT_DIR / 'new.wav'}")
+    if args.no_audio:
+        print("\nAudio generation skipped (--no-audio).")
+    else:
+        print("\nIf audio succeeded, files were written to:")
+        print(f"  - {OUTPUT_DIR / 'traditional.wav'}")
+        print(f"  - {OUTPUT_DIR / 'new.wav'}")
 
 
 

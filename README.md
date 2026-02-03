@@ -137,6 +137,23 @@ Run the tool:
 python src/altenglish.py
 ```
 
+With an explicit mode and input:
+```bash
+python src/altenglish.py --mode word hello
+python src/altenglish.py --mode sentence "this is a test"
+```
+
+Preserve or strip punctuation in sentence output (default: preserve):
+```bash
+python src/altenglish.py --mode sentence "hello, world!"
+python src/altenglish.py --mode sentence "hello, world!" --no-preserve-punctuation
+```
+
+Skip audio output:
+```bash
+python src/altenglish.py --mode sentence "this is a test" --no-audio
+```
+
 Example session:
 
 ```text
@@ -144,6 +161,30 @@ Enter an English word: this
 
 CMUdict phones: DH IH1 S
 Engineered symbols: ∆~· ▲| ⊣~
+Done.
+Generated:
+  - traditional.wav
+  - new.wav
+```
+
+Sentence mode example:
+```text
+Enter an English sentence: this is a test
+
+CMUdict phones (by word):
+  this: DH IH1 S
+  is: IH1 Z
+  a: AH0
+  test: T EH1 S T
+
+Engineered symbols (by word):
+  this: ∆~· ▲| ⊣~
+  is: ▲| ⊣~·
+  a: ▼|
+  test: ⊣ ▶| ⊣~ ⊣
+
+Engineered symbols (sentence):
+∆~· ▲| ⊣~ ▲| ⊣~· ▼| ⊣ ▶| ⊣~ ⊣
 Done.
 Generated:
   - traditional.wav
