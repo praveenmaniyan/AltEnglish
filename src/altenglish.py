@@ -2,8 +2,13 @@ import re
 import shutil
 import subprocess
 from typing import List, Optional, Tuple
+from pathlib import Path
 
 import pronouncing
+
+# Output directory for generated audio
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 # -----------------------------
@@ -204,8 +209,8 @@ def arpabet_to_espeak_phonemes(phones: List[str]) -> Tuple[str, List[str]]:
 def make_audio_files(word: str, phones: List[str]) -> None:
     """
     Create:
-      - traditional.wav
-      - new.wav (speaks phoneme string)
+      - output/traditional.wav
+      - output/new.wav (speaks phoneme string)
     """
     if not espeak_available():
         print("\n[Audio] espeak-ng/espeak not found on PATH.")
@@ -214,16 +219,26 @@ def make_audio_files(word: str, phones: List[str]) -> None:
 
     cmd = get_espeak_cmd()
 
-    # 1) Traditional
-    subprocess.run([cmd, "-v", "en", "-w", "traditional.wav", word], check=False)
+    traditional_path = OUTPUT_DIR / "traditional.wav"
+    new_path = OUTPUT_DIR / "new.wav"
+
+    # 1) Traditional pronunciation
+    subprocess.run(
+        [cmd, "-v", "en", "-w", str(traditional_path), word],
+        check=False
+    )
 
     # 2) New pronunciation via phoneme string
     phon_str, missing = arpabet_to_espeak_phonemes(phones)
     if missing:
         print("\n[Audio] Warning: some phones missing for eSpeak phoneme mode:", missing)
-        print("        The 'new.wav' may be incomplete/approximate.")
+        print("        The 'new.wav' may be approximate.")
 
-    subprocess.run([cmd, "-v", "en", "-w", "new.wav", phon_str], check=False)
+    subprocess.run(
+        [cmd, "-v", "en", "-w", str(new_path), phon_str],
+        check=False
+    )
+
 
 
 # ---------------------------------------
@@ -251,9 +266,10 @@ def main():
     make_audio_files(word, phones)
 
     print("\nDone.")
-    print("If audio succeeded, you should have:")
-    print("  - traditional.wav")
-    print("  - new.wav")
+    print("\nIf audio succeeded, files were written to:")
+    print(f"  - {OUTPUT_DIR / 'traditional.wav'}")
+    print(f"  - {OUTPUT_DIR / 'new.wav'}")
+
 
 
 if __name__ == "__main__":
