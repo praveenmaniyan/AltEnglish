@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/altenglish-logo.svg" width="160" alt="AltEnglish Logo">
+  <img src="assets/altenglish-logo.png" width="160" alt="AltEnglish Logo">
 </p>
 # AltEnglish
 
